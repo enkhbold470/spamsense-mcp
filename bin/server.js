@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import chalk from "chalk";
 import { detectCallSpamIntent } from "../src/spamDetector.js";
+import http from "node:http";
 
 const TOOL_NAME = "detect_call_intent";
 
@@ -141,10 +142,32 @@ async function run() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("SpamSense MCP Server running on stdio");
+
+  // If a port is provided (CLI or env), expose a tiny HTTP health server
+  const argv = process.argv.slice(2);
+  const portFlagIndex = argv.findIndex((a) => a === "--port" || a === "-p");
+  const portArg = portFlagIndex >= 0 ? Number(argv[portFlagIndex + 1]) : undefined;
+  const portEnv = process.env.PORT ? Number(process.env.PORT) : undefined;
+  const port = Number.isFinite(portArg) ? portArg : Number.isFinite(portEnv) ? portEnv : undefined;
+
+  if (port) {
+    const server = http.createServer((req, res) => {
+      // Always return 200 for root and health checks
+      if (req.url === "/" || req.url === "/health" || req.url === "/_health") {
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+        res.end(JSON.stringify({ status: "ok", service: "spamsense-mcp" }));
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    server.listen(port, () => {
+      console.error(`HTTP health server listening on :${port}`);
+    });
+  }
 }
 
 run().catch((err) => {
   console.error("Fatal error:", err);
   process.exit(1);
 });
-

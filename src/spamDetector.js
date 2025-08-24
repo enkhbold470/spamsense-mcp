@@ -39,15 +39,6 @@ const INTENT_LABELS = [
   { label: "personal", pattern: /(dinner|party|family|catch\s*up|birthday|see\s+you)/i },
 ];
 
-function countMatches(pattern, text) {
-  if (!pattern.global) {
-    const m = text.match(pattern);
-    return m ? 1 : 0;
-  }
-  const matches = text.match(pattern);
-  return matches ? matches.length : 0;
-}
-
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
 }
@@ -55,7 +46,6 @@ function clamp(n, min, max) {
 export function detectCallSpamIntent({ text, callerId, direction, locale } = {}) {
   const raw = typeof text === "string" ? text : "";
   const content = raw.trim();
-  const lc = content.toLowerCase();
 
   const matches = [];
   let pos = 0;
@@ -144,4 +134,3 @@ export function detectCallSpamIntent({ text, callerId, direction, locale } = {})
     },
   };
 }
-
