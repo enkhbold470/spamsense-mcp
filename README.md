@@ -1,75 +1,48 @@
-# Spamsense MCP Server
+SpamSense MCP Server
+=====================
 
-A TypeScript MCP server implementing a simple phone-number spam risk analysis tool. Built to be compatible with Dedalus Marketplace using streamable HTTP transport, following the guidelines in `dedalus-mcp-server-guideline/server-guidelines.md`.
+Detect whether a call/message intent is spam using a lightweight heuristic model, exposed as a Model Context Protocol (MCP) tool.
 
-## Features
+What it provides
+----------------
 
-- Streamable HTTP transport at `/mcp` with SSE fallback at `/sse`
-- STDIO transport for local development
-- Health check at `/health`
-- Stateless; no external API key required
-- Tool: `spamsense_check_phone` – analyze a phone number and return JSON with risk signals
+- Tool `detect_call_intent`: Analyzes input text (call transcript, voicemail, or message) and returns:
+  - `isSpam`: boolean classification
+  - `label`: `spam`, `likely_spam`, or `not_spam`
+  - `confidence`: 0–1
+  - `intent`: coarse category (e.g., `scam/spam`, `sales`, `support`, `delivery`, etc.)
+  - `reasons` and `matches` for explainability
 
-## Usage
+Usage
+-----
 
-- Install dependencies and build:
-  - `npm install`
-  - `npm run build`
-- Run HTTP server (default port 8080):
-  - `npm start`
-- Run STDIO transport:
-  - `npm run start:stdio`
+1) Install dependencies (requires network):
 
-Environment variables:
-- `PORT`: HTTP port (default: 8080)
-- `NODE_ENV`: set to `production` for 0.0.0.0 binding
-The server ships with a built-in blacklist of known-abusive numbers. Update it in `src/spamsense.ts` if needed.
+   npm install
 
-## MCP client config example
+2) Run the server (stdio):
 
-When running locally on port 8080:
+   npm start
 
-```
-{
-  "mcpServers": {
-    "spamsense": {
-      "url": "http://localhost:8080/mcp"
-    }
-  }
-}
-```
+3) Connect via an MCP-compatible client and call the tool `detect_call_intent` with:
 
-## Dedalus Marketplace
+   {
+     "text": "Hello, your account was suspended. Press 1 to verify.",
+     "callerId": "+1-202-555-0100",
+     "direction": "inbound",
+     "debug": true
+   }
 
-- The main entry point is `src/index.ts`, compiled to `dist/index.js`.
-- Uses `@modelcontextprotocol/sdk@^1.17.3` and the streamable HTTP transport.
-- Health check available at `/health`.
-- Binary name: `spamsense-mcp`.
+Implementation Notes
+--------------------
 
-## Docker
+- Pure JavaScript (ESM), no external network calls or ML models.
+- Heuristic rules and patterns are in `src/spamDetector.js`.
+- Server entry at `bin/server.js` with `#!/usr/bin/env node` shebang.
+- Requires Node.js 18+.
 
-A minimal Dockerfile is provided for containerized deployment.
+Development
+-----------
 
-```
-# Build
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY package.json package-lock.json* tsconfig.json ./
-RUN npm ci || npm i
-COPY src ./src
-RUN npm run build
-
-# Runtime
-FROM node:20-alpine
-WORKDIR /app
-ENV NODE_ENV=production
-ENV PORT=8080
-COPY --from=build /app/package.json ./
-COPY --from=build /app/dist ./dist
-EXPOSE 8080
-CMD ["node", "dist/index.js"]
-```
-
-## License
-
-MIT
+- Adjust patterns/weights in `src/spamDetector.js` to tune precision/recall for your data.
+- You can add more structured metadata to the tool schema as needed (e.g., language, channel, prior interactions).
