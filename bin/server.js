@@ -7,6 +7,17 @@ import chalk from "chalk";
 import { detectCallSpamIntent } from "../src/spamDetector.js";
 import http from "node:http";
 
+// Try to enable HTTP transport if available in the SDK
+let HttpServerTransport = undefined;
+try {
+  // Optional import to avoid hard failure on older SDKs
+  ({ HttpServerTransport } = await import(
+    "@modelcontextprotocol/sdk/server/http.js"
+  ));
+} catch {
+  // HTTP transport not available; stdio-only mode will be used
+}
+
 const TOOL_NAME = "detect_call_intent";
 
 const DETECT_CALL_INTENT_TOOL = {
@@ -143,28 +154,46 @@ async function run() {
   await server.connect(transport);
   console.error("SpamSense MCP Server running on stdio");
 
-  // If a port is provided (CLI or env), expose a tiny HTTP health server
+  // If a port is provided (CLI or env), expose HTTP server.
+  // If HTTP transport is available, also mount MCP at /mcp.
   const argv = process.argv.slice(2);
   const portFlagIndex = argv.findIndex((a) => a === "--port" || a === "-p");
   const portArg = portFlagIndex >= 0 ? Number(argv[portFlagIndex + 1]) : undefined;
   const portEnv = process.env.PORT ? Number(process.env.PORT) : undefined;
-  const port = Number.isFinite(portArg) ? portArg : Number.isFinite(portEnv) ? portEnv : undefined;
+  const port = Number.isFinite(portArg) ? portArg : Number.isFinite(portEnv) ? portEnv : 3000;
+  const mcpPath = process.env.MCP_HTTP_PATH || "/mcp";
 
-  if (port) {
-    const server = http.createServer((req, res) => {
-      // Always return 200 for root and health checks
-      if (req.url === "/" || req.url === "/health" || req.url === "/_health") {
-        res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-        res.end(JSON.stringify({ status: "ok", service: "spamsense-mcp" }));
-        return;
-      }
-      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      res.end("not found");
-    });
-    server.listen(port, () => {
-      console.error(`HTTP health server listening on :${port}`);
-    });
+  const nodeServer = http.createServer((req, res) => {
+    // Health endpoints
+    if (req.url === "/" || req.url === "/health" || req.url === "/_health") {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ status: "ok", service: "spamsense-mcp" }));
+      return;
+    }
+    // If HTTP transport is not available, respond 404 for other paths
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("not found");
+  });
+
+  // If SDK exposes HTTP transport, mount it at the configured path
+  if (HttpServerTransport) {
+    try {
+      const httpTransport = new HttpServerTransport({
+        server: nodeServer,
+        path: mcpPath,
+      });
+      await server.connect(httpTransport);
+      console.error(`MCP HTTP endpoint mounted at ${mcpPath}`);
+    } catch (e) {
+      console.error("Failed to enable MCP HTTP transport; continuing with health-only:", e);
+    }
+  } else {
+    console.error("MCP HTTP transport not available in SDK; stdio-only mode");
   }
+
+  nodeServer.listen(port, () => {
+    console.error(`HTTP server listening on :${port}`);
+  });
 }
 
 run().catch((err) => {
